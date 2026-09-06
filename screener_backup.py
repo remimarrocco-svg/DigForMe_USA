@@ -79,11 +79,11 @@ Your Task:
 Analyze the provided stocks and categorize your top selections into two distinct groups based on potential price target upside (minimum 15% upside to consensus mean target):
 
 --- GROUP 1: Core Quality & Growth ---
-- Select 2 to 3 high-market-cap, fundamental-first companies (e.g., LLY, ASML, NVDA, TSM).
+- Select 4 high-market-cap, fundamental-first companies (e.g., LLY, ASML, NVDA, TSM).
 - Focus on strong balance sheets, high moat, and lower long-term risk.
 
 --- GROUP 2: High-Risk / Speculative Plays ---
-- Select 1 to 2 high-volatility or growth plays (e.g., PLTR, COIN, MSTR, small/mid-cap tickers).
+- Select 4 high-volatility or growth plays (e.g., PLTR, COIN, MSTR, small/mid-cap tickers).
 - Focus on high-beta rebound potential where sharp drops present tactical swing opportunities.
 
 Format Requirements:
