@@ -56,8 +56,8 @@ summary_df = pd.DataFrame({
     "Drop_Percentage": percent_change
 })
 
-# 4. Apply 5% drop filter
-dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -5].sort_values(by='Drop_Percentage')
+# 4. Apply 8% drop filter
+dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -8].sort_values(by='Drop_Percentage')
 
 # 5. On transforme en texte pour Gemini
 dropped_stocks_summary = dropped_stocks.to_string()
