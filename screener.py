@@ -1,4 +1,11 @@
 import os
+import certifi
+import ssl
+# Point Python / OpenSSL to certifi's CA bundle so HTTPS verification works reliably
+os.environ['SSL_CERT_FILE'] = certifi.where()
+# Create a reusable SSL context that uses certifi's CA file.
+# Use this context with libraries that accept an SSLContext (e.g., smtplib.starttls(context=...))
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
@@ -6,8 +13,6 @@ from google import genai
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import ssl  # <--- NOUVEAU
-ssl._create_default_https_context = ssl._create_unverified_context ## --- LIGNE MAGIQUE POUR REGLER LE PROBLEME SUR MAC ---
 import requests
 import io
 
@@ -178,7 +183,7 @@ msg.attach(MIMEText(response.text, 'html'))
 # Connexion aux serveurs de Google et envoi
 try:
     server = smtplib.SMTP('smtp.gmail.com', 587)
-    server.starttls()  # Sécurise la connexion
+    server.starttls(context=SSL_CONTEXT) # Sécurise la connexion
     server.login(sender_email, app_password)
     server.send_message(msg)
     server.quit()
