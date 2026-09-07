@@ -19,29 +19,65 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # --- 2. FETCH MARKET DATA ---
-print("Aspiration des 500 actions du S&P 500 depuis Wikipedia...")
-
+### SnP500
+print("Fetching the 500 stocks from the S&P 500 on Wikipedia...")
 url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
 headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
-
-# 1. On télécharge la page web
-page_web = requests.get(url, headers=headers)
-
-# 2. On emballe le HTML avec io.StringIO pour que Pandas le lise parfaitement
-tables = pd.read_html(io.StringIO(page_web.text))
-
-# 3. Récupérer et nettoyer les tickers
-df_sp500 = tables[0]
+page_web = requests.get(url, headers=headers)     # 1. On télécharge la page web
+tables = pd.read_html(io.StringIO(page_web.text)) # 2. On emballe le HTML avec io.StringIO pour que Pandas le lise parfaitement
+df_sp500 = tables[0]                              # 3. Récupérer et nettoyer les tickers
 raw_tickers = df_sp500['Symbol'].tolist()
 tickers = [ticker.replace('.', '-') for ticker in raw_tickers]
+print(f"✅ {len(tickers)} S&P500 stocks succesfuly loaded!")
 
-print(f"✅ {len(tickers)} actions chargées avec succès !")
+### NASDAQ
+print("Fetching the 100 stocks from the Nasdaq on Wikipedia...")
+url2 = 'https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies'
+page_web2 = requests.get(url2, headers=headers)     # 1. On télécharge la page web
+tables2 = pd.read_html(io.StringIO(page_web2.text)) # 2. On emballe le HTML avec io.StringIO pour que Pandas le lise parfaitement
+df_Nsd100 = tables2[0]                              # 3. Récupérer et nettoyer les tickers
+raw_tickers2 = df_Nsd100['Ticker'].tolist()
+tickers2 = [ticker2.replace('.', '-') for ticker2 in raw_tickers2]
+print(f"✅ {len(tickers2)} NASDAQ-100 stocks succesfuly loaded!")
+
+### S&P 400 (Mid Cap)
+print("Fetching the 400 stocks from the S&P 400 on Wikipedia...")
+url3 = 'https://en.wikipedia.org/wiki/List_of_S%26P_400_companies'
+page_web3 = requests.get(url3, headers=headers)
+tables3 = pd.read_html(io.StringIO(page_web3.text))
+df_sp400 = tables3[0]
+raw_tickers3 = df_sp400['Symbol'].tolist()
+tickers3 = [ticker.replace('.', '-') for ticker in raw_tickers3]
+print(f"✅ {len(tickers3)} S&P400 stocks succesfuly loaded!")
+
+### S&P 600 (Small Cap)
+print("Fetching the 600 stocks from the S&P 600 on Wikipedia...")
+url4 = 'https://en.wikipedia.org/wiki/List_of_S%26P_600_companies'
+page_web4 = requests.get(url4, headers=headers)
+tables4 = pd.read_html(io.StringIO(page_web4.text))
+df_sp600 = tables4[0]
+raw_tickers4 = df_sp600['Symbol'].tolist()
+tickers4 = [ticker.replace('.', '-') for ticker in raw_tickers4]
+print(f"✅ {len(tickers4)} S&P600 stocks succesfuly loaded!")
+
+##########################################################################################
+
+print("Lists' fusion for duplicate deletion...")
+# 1. On additionne les 4 listes
+all_tickers = tickers + tickers2 + tickers3 + tickers4
+# 2. On transforme en 'set' pour tuer les doublons, puis on repasse en liste
+final_tickers = list(set(all_tickers))
+print(f"✅ {len(final_tickers)} UNIQUES stocks ready to be analyzed!")
+
+##########################################################################################
+##########################################################################################
+
 
 print("DigForMe is scanning global markets...")
 
-data = yf.download(tickers, period="2d", interval="1d")
+data = yf.download(final_tickers, period="2d", interval="1d")
 # 1. On récupère les données avec la sécurité de lire par la fin
 close_prices = data['Close']
 yesterday_close = close_prices.iloc[-2]
@@ -56,8 +92,8 @@ summary_df = pd.DataFrame({
     "Drop_Percentage": percent_change
 })
 
-# 4. Apply 8% drop filter
-dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -8].sort_values(by='Drop_Percentage')
+# 4. Apply 6% drop filter
+dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -6].sort_values(by='Drop_Percentage')
 
 # 5. On transforme en texte pour Gemini
 dropped_stocks_summary = dropped_stocks.to_string()
