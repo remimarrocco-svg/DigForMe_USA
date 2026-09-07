@@ -100,6 +100,7 @@ You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##)
 - Color the "Today's Drop" percentage in <span style="color: red; font-weight: bold;">red</span>.
 - Color the "Implied Upside" percentage in <span style="color: green; font-weight: bold;">green</span>.
 - Include the current stock price provided in the data.
+- Jump one line between each stock for clarity. 
 
 Do not wrap the response in ```html code blocks, just return the raw HTML code.
 """
