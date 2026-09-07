@@ -1,8 +1,6 @@
 import os
 import yfinance as yf
 import pandas as pd
-import ssl  # <--- NOUVEAU
-ssl._create_default_https_context = ssl._create_unverified_context ## --- LIGNE MAGIQUE POUR REGLER LE PROBLEME SUR MAC ---
 from dotenv import load_dotenv
 from google import genai
 import smtplib
@@ -52,13 +50,13 @@ today_current = close_prices.iloc[-1]
 # 2. On calcule le pourcentage
 percent_change = ((today_current - yesterday_close) / yesterday_close) * 100
 
-# 3. NOUVEAU : On fusionne le prix et le pourcentage dans un seul tableau
+# 3. On fusionne le prix et le pourcentage dans un seul tableau
 summary_df = pd.DataFrame({
     "Current_Price_$": today_current.round(2),
     "Drop_Percentage": percent_change
 })
 
-# 4. On garde votre excellent filtre des 5%
+# 4. Apply 5% drop filter
 dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -5].sort_values(by='Drop_Percentage')
 
 # 5. On transforme en texte pour Gemini
@@ -105,13 +103,23 @@ You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##)
 
 Do not wrap the response in ```html code blocks, just return the raw HTML code.
 """
+import time
+# Retry temporary Gemini service failures with exponential backoff.
+for attempt in range(5):
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=prompt,
+        )
+        break
+    except Exception:
+        if attempt == 4:
+            raise
+        wait_seconds = 2 ** attempt
+        print(f"Gemini unavailable. Retrying in {wait_seconds}s...")
+        time.sleep(wait_seconds)
 
-response = client.models.generate_content(
-    model="gemini-3.6-flash",
-    contents=prompt,
-)
-
-print("\n================ DIGFORME DAILY AI REPORT ================\n")
+print("\n================ DigForMe DAILY AI REPORT ================\n")
 print(response.text)
 
 # --- 4. ENVOI DE L'EMAIL VIA GMAIL ---
