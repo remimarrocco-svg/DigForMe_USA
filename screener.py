@@ -93,7 +93,13 @@ summary_df = pd.DataFrame({
 # 4. Apply 6% drop filter
 dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -6].sort_values(by='Drop_Percentage')
 
-# 5. On transforme en texte pour Gemini
+############## CANCEL THE RUN IF NO STOCKS DROPPED MORE THAN 6% TODAY ##############################
+if dropped_stocks.empty:
+    print("⚠️  No stocks dropped more than 6% today. Exiting.")
+    exit(0)
+
+
+# 5. Transforming in text for Gemini
 dropped_stocks_summary = dropped_stocks.to_string()
 
 print("\n--- DROPPED STOCKS DETECTED ---")
