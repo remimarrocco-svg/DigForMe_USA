@@ -50,19 +50,19 @@ def fetch_ticker_list(url, column_name):
 
 # --- 2. FETCH MARKET DATA ---
 tickers = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', 'Symbol')
-print(f"✅ {len(tickers)} S&P500 stocks succesfuly loaded!")
+print(f"✅ {len(tickers)} S&P 500 stocks successfully loaded!")
 
 tickers2 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies', 'Ticker')
-print(f"✅ {len(tickers2)} NASDAQ-100 stocks succesfuly loaded!")
+print(f"✅ {len(tickers2)} NASDAQ-100 stocks successfully loaded!")
 
 tickers3 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_400_companies', 'Symbol')
-print(f"✅ {len(tickers3)} S&P400 stocks succesfuly loaded!")
+print(f"✅ {len(tickers3)} S&P 400 stocks successfully loaded!")
 
 tickers4 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_600_companies', 'Symbol')
-print(f"✅ {len(tickers4)} S&P600 stocks succesfuly loaded!")
+print(f"✅ {len(tickers4)} S&P 600 stocks successfully loaded!")
 ##########################################################################################
 
-print("Lists' fusion for duplicate deletion...")
+print("Combining lists and removing duplicates...")
 # Keep S&P membership metadata while deduplicating the analysis universe.
 snp_membership = {}
 for index_name, index_tickers in (
@@ -73,9 +73,9 @@ for index_name, index_tickers in (
     for ticker in index_tickers:
         snp_membership.setdefault(ticker, []).append(index_name)
 
-# 1. On additionne les 4 listes
+# 1. Combine the four lists.
 all_tickers = tickers + tickers2 + tickers3 + tickers4
-# 2. On transforme en 'set' pour tuer les doublons, puis on repasse en liste
+# 2. Remove duplicates while preserving the original order.
 final_tickers = list(dict.fromkeys(all_tickers))
 print(f"✅ {len(final_tickers)} UNIQUES stocks ready to be analyzed!")
 
@@ -83,18 +83,18 @@ print(f"✅ {len(final_tickers)} UNIQUES stocks ready to be analyzed!")
 ##########################################################################################
 
 
-print("DigForMe is scanning global markets...")
+print("DigForMe_USA is scanning U.S. markets...")
 
 data = yf.download(final_tickers, period="2d", interval="1d")
-# 1. On récupère les données avec la sécurité de lire par la fin
+# 1. Read the last two closing prices.
 close_prices = data['Close']
 yesterday_close = close_prices.iloc[-2]
 today_current = close_prices.iloc[-1]
 
-# 2. On calcule le pourcentage
+# 2. Calculate the percentage change.
 percent_change = ((today_current - yesterday_close) / yesterday_close) * 100
 
-# 3. On fusionne le prix et le pourcentage dans un seul tableau
+# 3. Combine price and percentage change into one table.
 summary_df = pd.DataFrame({
     "Current_Price_$": today_current.round(2),
     "Drop_Percentage": percent_change
@@ -143,7 +143,7 @@ print("\n--- DROPPED STOCKS DETECTED ---")
 print(dropped_stocks_summary)
 
 # --- 3. SEND TO GEMINI FOR ANALYSIS ---
-print("\nSending data to Gemini 3.6 Flash for analysis...")
+print("\nSending data to Gemini 3.5 Flash Lite for analysis...")
 
 prompt = f"""
 You are an expert equity research assistant. Below is a list of global stocks that dropped today compared to yesterday's close, along with their percentage drop:
@@ -217,7 +217,7 @@ except Exception as e:
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = "⚠️ DigForMe - ERROR: Gemini API Failed"
+    msg['Subject'] = "⚠️ DigForMe_USA - ERROR: Gemini API Failed"
     
     error_body = f"""
     <html><body>
@@ -254,7 +254,7 @@ if not response.text or not response.text.strip():
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = "⚠️ DigForMe - ERROR: Gemini returned empty response"
+    msg['Subject'] = "⚠️ DigForMe_USA - ERROR: Gemini returned empty response"
     
     error_body = f"""
     <html><body>
@@ -281,29 +281,29 @@ if not response.text or not response.text.strip():
 print("\n================ DigForMe DAILY AI REPORT ================\n")
 print(response.text)
 
-# --- 4. ENVOI DE L'EMAIL VIA GMAIL ---
-print("\nPréparation de l'envoi de l'email...")
+# --- 4. SEND THE EMAIL VIA GMAIL ---
+print("\nGetting the email ready...")
 
 sender_email = os.environ.get("GMAIL_USER")
 app_password = os.environ.get("GMAIL_APP_PASSWORD")
 receiver_email = sender_email
 
-# Structuration de l'email
+# Build the email.
 msg = MIMEMultipart()
 msg['From'] = sender_email
 msg['To'] = receiver_email
-msg['Subject'] = "DigForMe - Daily AI Stock Report 📈"
+msg['Subject'] = "DigForMe_USA - Daily AI Stock Report 📈"
 
-# Ajout du texte généré par Gemini dans le corps du mail
+# Add Gemini's generated report to the email body.
 msg.attach(MIMEText(response.text, 'html'))
 
-# Connexion aux serveurs de Google et envoi
+# Connect to Gmail and send the message.
 try:
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls(context=SSL_CONTEXT)
     server.login(sender_email, app_password)
     server.send_message(msg)
     server.quit()
-    print("✅ SUCCÈS : L'email a été envoyé avec succès !")
+    print("✅ SUCCESS: Email was sent successfully!")
 except Exception as e:
-    print(f"❌ ERREUR lors de l'envoi de l'email : {e}")
+    print(f"❌ ERROR while sending the email: {e}")
