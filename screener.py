@@ -63,10 +63,20 @@ print(f"✅ {len(tickers4)} S&P600 stocks succesfuly loaded!")
 ##########################################################################################
 
 print("Lists' fusion for duplicate deletion...")
+# Keep S&P membership metadata while deduplicating the analysis universe.
+snp_membership = {}
+for index_name, index_tickers in (
+    ("S&P 500", tickers),
+    ("S&P 400", tickers3),
+    ("S&P 600", tickers4),
+):
+    for ticker in index_tickers:
+        snp_membership.setdefault(ticker, []).append(index_name)
+
 # 1. On additionne les 4 listes
 all_tickers = tickers + tickers2 + tickers3 + tickers4
 # 2. On transforme en 'set' pour tuer les doublons, puis on repasse en liste
-final_tickers = list(set(all_tickers))
+final_tickers = list(dict.fromkeys(all_tickers))
 print(f"✅ {len(final_tickers)} UNIQUES stocks ready to be analyzed!")
 
 ##########################################################################################
@@ -89,9 +99,36 @@ summary_df = pd.DataFrame({
     "Current_Price_$": today_current.round(2),
     "Drop_Percentage": percent_change
 })
+summary_df["S&P Membership"] = [
+    ", ".join(snp_membership.get(ticker, [])) or "NASDAQ-100"
+    for ticker in summary_df.index
+]
 
 # 4. Apply 6% drop filter
-dropped_stocks = summary_df[summary_df['Drop_Percentage'] < -6].sort_values(by='Drop_Percentage')
+dropped_stocks = summary_df[
+    summary_df['Drop_Percentage'] < -6
+].sort_values(by='Drop_Percentage').copy()
+
+
+def fetch_mean_analyst_target(ticker):
+    """Return Yahoo Finance's average analyst target for a ticker."""
+    try:
+        price_targets = yf.Ticker(ticker).get_analyst_price_targets()
+        return price_targets.get("mean")
+    except Exception as error:
+        print(f"⚠️ Could not fetch analyst target for {ticker}: {error}")
+        return None
+
+
+dropped_stocks["Consensus_Target_$"] = [
+    fetch_mean_analyst_target(ticker) for ticker in dropped_stocks.index
+]
+dropped_stocks["Implied_Upside_%"] = (
+    (dropped_stocks["Consensus_Target_$"] - dropped_stocks["Current_Price_$"])
+    / dropped_stocks["Current_Price_$"]
+) * 100
+dropped_stocks["Consensus_Target_$"] = dropped_stocks["Consensus_Target_$"].round(2)
+dropped_stocks["Implied_Upside_%"] = dropped_stocks["Implied_Upside_%"].round(2)
 
 ############## CANCEL THE RUN IF NO STOCKS DROPPED MORE THAN 6% TODAY ##############################
 if dropped_stocks.empty:
@@ -106,7 +143,7 @@ print("\n--- DROPPED STOCKS DETECTED ---")
 print(dropped_stocks_summary)
 
 # --- 3. SEND TO GEMINI FOR ANALYSIS ---
-print("\nSending data to Gemini Pro for analysis...")
+print("\nSending data to Gemini 3.6 Flash for analysis...")
 
 prompt = f"""
 You are an expert equity research assistant. Below is a list of global stocks that dropped today compared to yesterday's close, along with their percentage drop:
@@ -114,7 +151,7 @@ You are an expert equity research assistant. Below is a list of global stocks th
 {dropped_stocks_summary}
 
 Your Task:
-Analyze the provided stocks and categorize your top selections into two distinct groups based on potential price target upside (minimum 15% upside to consensus mean target):
+Analyze the provided stocks and categorize your top selections into two distinct groups based on the supplied analyst target upside (minimum 15% upside):
 
 --- GROUP 1: Core Quality & Growth ---
 - Select 4 high-market-cap, fundamental-first companies (e.g., LLY, ASML, NVDA, TSM).
@@ -126,19 +163,26 @@ Analyze the provided stocks and categorize your top selections into two distinct
 
 Format Requirements:
 For each stock selected, provide:
-- Ticker & Company Name
-- Today's value and Drop %
-- Estimated Consensus Target & Implied Upside %
-- 1-Sentence Thesis (Why this drop represents an opportunity)
-
+- Ticker & Company Name, ([insert S&P Membership])
+- Today's Price and Consensus Target using exactly this HTML format, replacing the example values with the actual values from the data. Do not estimate, recalculate, or alter the supplied target or upside values:
+    Today's Price: <b><u>$266.51</u></b> (<span style="color: red; font-weight: bold;">-6.73%</span>)
+    Consensus Target: <b><u>$450.00</u></b> (<span style="color: green; font-weight: bold;">+68.85%</span>)
+- Write a 2–3 sentence thesis covering:
+  1. The company’s business model and how it makes money.
+  2. The most likely reason for today’s price drop. Clearly distinguish confirmed facts from possible explanations.
+  3. An opportunity rating from 0/10 to 10/10, where 10/10 represents the strongest buying opportunity.
+- End with: Opportunity Rating: X/10
 Keep the report concise, executive, and structured with clear headers for Group 1 and Group 2.
 
 You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##). 
 - Use <h2> for Group headers (color them DarkBlue).
 - Use <ul> and <li> for the stocks.
 - Make the Tickers <b>bold</b>.
-- Color the "Today's Drop" percentage in <span style="color: red; font-weight: bold;">red</span>.
-- Color the "Implied Upside" percentage in <span style="color: green; font-weight: bold;">green</span>.
+- Wrap the entire thesis sentence in <i>...</i>.
+- Keep the exact labels "Today's Price:" and "Consensus Target:" shown in the example.
+- Keep the drop percentage red and the implied upside percentage green as shown in the example.
+- Use the supplied Consensus_Target_$ and Implied_Upside_% values exactly; do not use outside knowledge or invent replacement values.
+- If Consensus_Target_$ or Implied_Upside_% is unavailable, write "Unavailable" instead of estimating it.
 - Include the current stock price provided in the data.
 - Jump one line between each stock for clarity. 
 
@@ -151,7 +195,7 @@ try:
     for attempt in range(9):
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash",
+                model="gemini-3.5-flash-lite",
                 contents=prompt,
             )
             break
