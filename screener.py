@@ -144,31 +144,105 @@ You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##)
 
 Do not wrap the response in ```html code blocks, just return the raw HTML code.
 """
+
 import time
 # Retry temporary Gemini service failures with exponential backoff.
-for attempt in range(10):
+try:
+    for attempt in range(9):
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+            )
+            break
+        except Exception:
+            if attempt == 8:
+                raise
+            wait_seconds = 2 ** attempt
+            print(f"Gemini unavailable. Retrying in {wait_seconds}s...")
+            time.sleep(wait_seconds)
+except Exception as e:
+    print(f"❌ ERROR: Gemini failed after 9 retries: {e}")
+    print("Sending alert email with dropped stocks data...")
+    
+    # Send error email with dropped stocks
+    sender_email = os.environ.get("GMAIL_USER")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    receiver_email = sender_email
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = "⚠️ DigForMe - ERROR: Gemini API Failed"
+    
+    error_body = f"""
+    <html><body>
+    <h2>Gemini API Error</h2>
+    <p>The Gemini API failed to analyze today's dropped stocks after 9 retry attempts.</p>
+    <p><strong>Error:</strong> {e}</p>
+    <p><strong>Stocks detected with >6% drop:</strong></p>
+    <pre>{dropped_stocks_summary}</pre>
+    <p>Please check manually or retry later.</p>
+    </body></html>
+    """
+    msg.attach(MIMEText(error_body, 'html'))
+    
     try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=prompt,
-        )
-        break
-    except Exception:
-        if attempt == 9:
-            raise
-        wait_seconds = 2 ** attempt
-        print(f"Gemini unavailable. Retrying in {wait_seconds}s...")
-        time.sleep(wait_seconds)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls(context=SSL_CONTEXT)
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Error alert sent via email")
+    except Exception as e2:
+        print(f"❌ Failed to send error email: {e2}")
+    exit(1)
+
+# Validate Gemini response
+if not response.text or not response.text.strip():
+    print("❌ ERROR: Gemini returned empty response.")
+    print("Sending alert email with dropped stocks data...")
+    
+    sender_email = os.environ.get("GMAIL_USER")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    receiver_email = sender_email
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = "⚠️ DigForMe - ERROR: Gemini returned empty response"
+    
+    error_body = f"""
+    <html><body>
+    <h2>Gemini Empty Response Error</h2>
+    <p>The Gemini API returned an empty response.</p>
+    <p><strong>Stocks detected with >6% drop:</strong></p>
+    <pre>{dropped_stocks_summary}</pre>
+    <p>Please check manually or retry later.</p>
+    </body></html>
+    """
+    msg.attach(MIMEText(error_body, 'html'))
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls(context=SSL_CONTEXT)
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Error alert sent via email")
+    except Exception as e:
+        print(f"❌ Failed to send error email: {e}")
+    exit(1)
 
 print("\n================ DigForMe DAILY AI REPORT ================\n")
 print(response.text)
 
 # --- 4. ENVOI DE L'EMAIL VIA GMAIL ---
-print("\nGetting the email ready...")
+print("\nPréparation de l'envoi de l'email...")
 
 sender_email = os.environ.get("GMAIL_USER")
 app_password = os.environ.get("GMAIL_APP_PASSWORD")
-receiver_email = sender_email  # Le rapport s'envoie à vous-même
+receiver_email = sender_email
 
 # Structuration de l'email
 msg = MIMEMultipart()
@@ -182,10 +256,10 @@ msg.attach(MIMEText(response.text, 'html'))
 # Connexion aux serveurs de Google et envoi
 try:
     server = smtplib.SMTP('smtp.gmail.com', 587)
-    server.starttls(context=SSL_CONTEXT) # Sécurise la connexion
+    server.starttls(context=SSL_CONTEXT)
     server.login(sender_email, app_password)
     server.send_message(msg)
     server.quit()
-    print("✅ SUCCESS : The email has been sent successfully!")
+    print("✅ SUCCÈS : L'email a été envoyé avec succès !")
 except Exception as e:
-    print(f"❌ ERROR while sending the email : {e}")
+    print(f"❌ ERREUR lors de l'envoi de l'email : {e}")
