@@ -176,13 +176,10 @@ Contributions welcome! Possible improvements:
 - Verify secrets are set in **Settings** → **Secrets and variables** → **Actions**
 - Check workflow run logs for error details
 
-## License
-
-MIT License - See LICENSE file for details
 
 ## Author
 
-Created by [Rémi Marrocco](https://github.com/remimarrocco-svg)
+Created by [Rémi Marrocco, PhD](https://github.com/remimarrocco-svg)
 
 ---
 
