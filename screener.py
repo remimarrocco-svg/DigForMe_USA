@@ -232,6 +232,10 @@ For each stock selected, provide:
 - End with: Opportunity Rating: X/10
 Keep the report concise, executive, and structured with clear headers for Group 1 and Group 2.
 
+- Finish with this footer at the bottom '<p style="color: gray; font-style: italic;">'
+    'With the courtesy of Remi Marrocco, may the stocks be with you.'
+    '</p>'
+
 You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##). 
 - Use <h2> for Group headers (color them DarkBlue).
 - Use <ul> and <li> for the stocks.
