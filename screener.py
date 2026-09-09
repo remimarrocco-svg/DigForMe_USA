@@ -6,26 +6,49 @@ os.environ['SSL_CERT_FILE'] = certifi.where()
 # Create a reusable SSL context that uses certifi's CA file.
 # Use this context with libraries that accept an SSLContext (e.g., smtplib.starttls(context=...))
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+
 import yfinance as yf
 import pandas as pd
-from dotenv import load_dotenv
 from google import genai
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 import io
+import time
+
+# Import configuration
+from config import (
+    GEMINI_API_KEY,
+    GMAIL_USER,
+    GMAIL_APP_PASSWORD,
+    EMAIL_RECIPIENTS,
+    EMAIL_SUBJECT,
+    DROP_THRESHOLD,
+    LOOKBACK_PERIOD,
+    GEMINI_MODEL,
+    MIN_UPSIDE_THRESHOLD,
+    STOCKS_PER_GROUP,
+    INDICES,
+    DEBUG,
+    validate_config,
+    print_config
+)
+
+# Validate configuration on startup
+validate_config()
+
+if DEBUG:
+    print_config()
+
+# Setup request session with SSL verification
 session = requests.Session()
 session.verify = certifi.where()
 
-# Load the hidden variables from the .env file
-load_dotenv()
-
-# Securely grab the API key
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Initialize Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# --- 2. FETCH MARKET DATA ---
+
 def fetch_ticker_list(url, column_name):
     """
     Fetch stock tickers from a Wikipedia table.
@@ -48,19 +71,55 @@ def fetch_ticker_list(url, column_name):
     return tickers
 
 
-# --- 2. FETCH MARKET DATA ---
-tickers = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', 'Symbol')
+def send_error_email(subject, error_message, dropped_stocks_summary):
+    """
+    Send error notification email.
+    
+    Args:
+        subject: Email subject
+        error_message: Error description
+        dropped_stocks_summary: Summary of dropped stocks data
+    """
+    msg = MIMEMultipart()
+    msg['From'] = GMAIL_USER
+    msg['To'] = ', '.join(EMAIL_RECIPIENTS)
+    msg['Subject'] = subject
+    
+    error_body = f"""
+    <html><body>
+    <h2>{subject}</h2>
+    <p>{error_message}</p>
+    <p><strong>Stocks detected with >6% drop:</strong></p>
+    <pre>{dropped_stocks_summary}</pre>
+    <p>Please check manually or retry later.</p>
+    </body></html>
+    """
+    msg.attach(MIMEText(error_body, 'html'))
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls(context=SSL_CONTEXT)
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Error alert sent via email")
+    except Exception as e:
+        print(f"❌ Failed to send error email: {e}")
+
+
+# --- 1. FETCH MARKET DATA ---
+print("Loading market indices...")
+tickers = fetch_ticker_list(INDICES["S&P 500"]["url"], INDICES["S&P 500"]["column"])
 print(f"✅ {len(tickers)} S&P 500 stocks successfully loaded!")
 
-tickers2 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies', 'Ticker')
+tickers2 = fetch_ticker_list(INDICES["NASDAQ-100"]["url"], INDICES["NASDAQ-100"]["column"])
 print(f"✅ {len(tickers2)} NASDAQ-100 stocks successfully loaded!")
 
-tickers3 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_400_companies', 'Symbol')
+tickers3 = fetch_ticker_list(INDICES["S&P 400"]["url"], INDICES["S&P 400"]["column"])
 print(f"✅ {len(tickers3)} S&P 400 stocks successfully loaded!")
 
-tickers4 = fetch_ticker_list('https://en.wikipedia.org/wiki/List_of_S%26P_600_companies', 'Symbol')
+tickers4 = fetch_ticker_list(INDICES["S&P 600"]["url"], INDICES["S&P 600"]["column"])
 print(f"✅ {len(tickers4)} S&P 600 stocks successfully loaded!")
-##########################################################################################
 
 print("Combining lists and removing duplicates...")
 # Keep S&P membership metadata while deduplicating the analysis universe.
@@ -77,15 +136,14 @@ for index_name, index_tickers in (
 all_tickers = tickers + tickers2 + tickers3 + tickers4
 # 2. Remove duplicates while preserving the original order.
 final_tickers = list(dict.fromkeys(all_tickers))
-print(f"✅ {len(final_tickers)} UNIQUES stocks ready to be analyzed!")
+print(f"✅ {len(final_tickers)} UNIQUE stocks ready to be analyzed!")
 
 ##########################################################################################
 ##########################################################################################
-
 
 print("DigForMe_USA is scanning U.S. markets...")
 
-data = yf.download(final_tickers, period="2d", interval="1d")
+data = yf.download(final_tickers, period=LOOKBACK_PERIOD, interval="1d")
 # 1. Read the last two closing prices.
 close_prices = data['Close']
 yesterday_close = close_prices.iloc[-2]
@@ -104,9 +162,9 @@ summary_df["S&P Membership"] = [
     for ticker in summary_df.index
 ]
 
-# 4. Apply 6% drop filter
+# 4. Apply configurable drop filter
 dropped_stocks = summary_df[
-    summary_df['Drop_Percentage'] < -6
+    summary_df['Drop_Percentage'] < DROP_THRESHOLD
 ].sort_values(by='Drop_Percentage').copy()
 
 
@@ -130,9 +188,9 @@ dropped_stocks["Implied_Upside_%"] = (
 dropped_stocks["Consensus_Target_$"] = dropped_stocks["Consensus_Target_$"].round(2)
 dropped_stocks["Implied_Upside_%"] = dropped_stocks["Implied_Upside_%"].round(2)
 
-############## CANCEL THE RUN IF NO STOCKS DROPPED MORE THAN 6% TODAY ##############################
+############## CANCEL THE RUN IF NO STOCKS DROPPED MORE THAN THRESHOLD ##############################
 if dropped_stocks.empty:
-    print("⚠️  No stocks dropped more than 6% today. Exiting.")
+    print(f"⚠️  No stocks dropped more than {DROP_THRESHOLD}% today. Exiting.")
     exit(0)
 
 
@@ -142,8 +200,8 @@ dropped_stocks_summary = dropped_stocks.to_string()
 print("\n--- DROPPED STOCKS DETECTED ---")
 print(dropped_stocks_summary)
 
-# --- 3. SEND TO GEMINI FOR ANALYSIS ---
-print("\nSending data to Gemini 3.5 Flash Lite for analysis...")
+# --- 2. SEND TO GEMINI FOR ANALYSIS ---
+print(f"\nSending data to {GEMINI_MODEL} for analysis...")
 
 prompt = f"""
 You are an expert equity research assistant. Below is a list of global stocks that dropped today compared to yesterday's close, along with their percentage drop:
@@ -151,25 +209,25 @@ You are an expert equity research assistant. Below is a list of global stocks th
 {dropped_stocks_summary}
 
 Your Task:
-Analyze the provided stocks and categorize your top selections into two distinct groups based on the supplied analyst target upside (minimum 15% upside):
+Analyze the provided stocks and categorize your top selections into two distinct groups based on the supplied analyst target upside (minimum {MIN_UPSIDE_THRESHOLD}% upside):
 
 --- GROUP 1: Core Quality & Growth ---
-- Select 4 high-market-cap, fundamental-first companies (e.g., LLY, ASML, NVDA, TSM).
+- Select {STOCKS_PER_GROUP} high-market-cap, fundamental-first companies (e.g., LLY, ASML, NVDA, TSM).
 - Focus on strong balance sheets, high moat, and lower long-term risk.
 
 --- GROUP 2: High-Risk / Speculative Plays ---
-- Select 4 high-volatility or growth plays (e.g., PLTR, COIN, MSTR, small/mid-cap tickers).
+- Select {STOCKS_PER_GROUP} high-volatility or growth plays (e.g., PLTR, COIN, MSTR, small/mid-cap tickers).
 - Focus on high-beta rebound potential where sharp drops present tactical swing opportunities.
 
 Format Requirements:
 For each stock selected, provide:
 - Ticker & Company Name, ([insert S&P Membership])
-- Today's Price and Consensus Target using exactly this HTML format, replacing the example values with the actual values from the data. Do not estimate, recalculate, or alter the supplied target or upside values:
+- Today's Price and Consensus Target using exactly this HTML format, replacing the example values with the actual values from the data. Do not estimate, recalculate, or alter the supplied target [...]
     Today's Price: <b><u>$266.51</u></b> (<span style="color: red; font-weight: bold;">-6.73%</span>)
     Consensus Target: <b><u>$450.00</u></b> (<span style="color: green; font-weight: bold;">+68.85%</span>)
 - Write a 2–3 sentence thesis covering:
-  1. The company’s business model and how it makes money.
-  2. The most likely reason for today’s price drop. Clearly distinguish confirmed facts from possible explanations.
+  1. The company's business model and how it makes money.
+  2. The most likely reason for today's price drop. Clearly distinguish confirmed facts from possible explanations.
   3. An opportunity rating from 0/10 to 10/10, where 10/10 represents the strongest buying opportunity.
 - End with: Opportunity Rating: X/10
 Keep the report concise, executive, and structured with clear headers for Group 1 and Group 2.
@@ -189,13 +247,12 @@ You MUST format the entire output in raw HTML. Do not use Markdown (no ** or ##)
 Do not wrap the response in ```html code blocks, just return the raw HTML code.
 """
 
-import time
 # Retry temporary Gemini service failures with exponential backoff.
 try:
     for attempt in range(9):
         try:
             response = client.models.generate_content(
-                model="gemini-3.5-flash-lite",
+                model=GEMINI_MODEL,
                 contents=prompt,
             )
             break
@@ -208,91 +265,35 @@ try:
 except Exception as e:
     print(f"❌ ERROR: Gemini failed after 9 retries: {e}")
     print("Sending alert email with dropped stocks data...")
-    
-    # Send error email with dropped stocks
-    sender_email = os.environ.get("GMAIL_USER")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD")
-    receiver_email = sender_email
-    
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-    msg['Subject'] = "⚠️ DigForMe_USA - ERROR: Gemini API Failed"
-    
-    error_body = f"""
-    <html><body>
-    <h2>Gemini API Error</h2>
-    <p>The Gemini API failed to analyze today's dropped stocks after 9 retry attempts.</p>
-    <p><strong>Error:</strong> {e}</p>
-    <p><strong>Stocks detected with >6% drop:</strong></p>
-    <pre>{dropped_stocks_summary}</pre>
-    <p>Please check manually or retry later.</p>
-    </body></html>
-    """
-    msg.attach(MIMEText(error_body, 'html'))
-    
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls(context=SSL_CONTEXT)
-        server.login(sender_email, app_password)
-        server.send_message(msg)
-        server.quit()
-        print("✅ Error alert sent via email")
-    except Exception as e2:
-        print(f"❌ Failed to send error email: {e2}")
+    send_error_email(
+        "⚠️ DigForMe_USA - ERROR: Gemini API Failed",
+        f"The Gemini API failed to analyze today's dropped stocks after 9 retry attempts. Error: {e}",
+        dropped_stocks_summary
+    )
     exit(1)
 
 # Validate Gemini response
 if not response.text or not response.text.strip():
     print("❌ ERROR: Gemini returned empty response.")
     print("Sending alert email with dropped stocks data...")
-    
-    sender_email = os.environ.get("GMAIL_USER")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD")
-    receiver_email = sender_email
-    
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-    msg['Subject'] = "⚠️ DigForMe_USA - ERROR: Gemini returned empty response"
-    
-    error_body = f"""
-    <html><body>
-    <h2>Gemini Empty Response Error</h2>
-    <p>The Gemini API returned an empty response.</p>
-    <p><strong>Stocks detected with >6% drop:</strong></p>
-    <pre>{dropped_stocks_summary}</pre>
-    <p>Please check manually or retry later.</p>
-    </body></html>
-    """
-    msg.attach(MIMEText(error_body, 'html'))
-    
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls(context=SSL_CONTEXT)
-        server.login(sender_email, app_password)
-        server.send_message(msg)
-        server.quit()
-        print("✅ Error alert sent via email")
-    except Exception as e:
-        print(f"❌ Failed to send error email: {e}")
+    send_error_email(
+        "⚠️ DigForMe_USA - ERROR: Gemini returned empty response",
+        "The Gemini API returned an empty response.",
+        dropped_stocks_summary
+    )
     exit(1)
 
 print("\n================ DigForMe DAILY AI REPORT ================\n")
 print(response.text)
 
-# --- 4. SEND THE EMAIL VIA GMAIL ---
+# --- 3. SEND THE EMAIL VIA GMAIL ---
 print("\nGetting the email ready...")
-
-sender_email = os.environ.get("GMAIL_USER")
-app_password = os.environ.get("GMAIL_APP_PASSWORD")
-receiver_email = sender_email
 
 # Build the email.
 msg = MIMEMultipart()
-msg['From'] = sender_email
-msg['To'] = receiver_email
-msg['Subject'] = "DigForMe_USA - Daily AI Stock Report 📈"
+msg['From'] = GMAIL_USER
+msg['To'] = ', '.join(EMAIL_RECIPIENTS)
+msg['Subject'] = EMAIL_SUBJECT
 
 # Add Gemini's generated report to the email body.
 msg.attach(MIMEText(response.text, 'html'))
@@ -301,7 +302,7 @@ msg.attach(MIMEText(response.text, 'html'))
 try:
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls(context=SSL_CONTEXT)
-    server.login(sender_email, app_password)
+    server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
     server.send_message(msg)
     server.quit()
     print("✅ SUCCESS: Email was sent successfully!")
