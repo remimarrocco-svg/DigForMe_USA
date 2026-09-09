@@ -2,6 +2,8 @@
 
 Automated daily screener tracking >6% drops across ~1,500 US equities (S&P 500, 400, 600 & Nasdaq-100). Uses Google Gemini AI to evaluate fundamentals, analyst price targets, and news, automatically delivering executive HTML email reports.
 
+The goal is to detect undervalued stocks trading >15% below analyst price targets, identifying high-probability bounce-back candidates following sharp daily drops
+
 ## Features
 
 - **Daily Market Scan**: Tracks 1,500+ US equities across major indices
