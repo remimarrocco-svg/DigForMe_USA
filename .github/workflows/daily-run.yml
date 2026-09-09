@@ -2,7 +2,7 @@ name: DigForMe Daily Screener
 
 on:
   schedule:
-    # 14:00 UTC = 7:00 AM PDT (Lundi au Vendredi)
+    # 14:45 UTC = 7:45 AM PDT (Mon to Fri) this would be 1h15min (summer) or 15min(winter) after NY market opening
     - cron: '45 14 * * 1-5'
   # Le trigger magique pour pouvoir lancer le script manuellement depuis GitHub !
   workflow_dispatch: 
